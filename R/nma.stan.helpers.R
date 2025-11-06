@@ -68,36 +68,43 @@ convert_bugs_to_stan_data <- function(model) {
     na_a = bugsdata$na_a
   )
   
-  # Add treatment indices
+  # Add treatment indices - replace NAs with 1 (will be ignored by Stan based on na_a)
   stan_data$t_a <- bugsdata$t_a
+  stan_data$t_a[is.na(stan_data$t_a)] <- 1
   
-  # Add family-specific data
+  # Add family-specific data - replace NAs with 0 (will be ignored by Stan based on na_a)
   if (family == "binomial") {
     stan_data$r <- bugsdata$r
+    stan_data$r[is.na(stan_data$r)] <- 0
     stan_data$n <- bugsdata$n
+    stan_data$n[is.na(stan_data$n)] <- 1  # avoid division by zero
     
     # Add time for cloglog link
     if (link == "cloglog") {
       stan_data$time <- bugsdata$time
+      stan_data$time[is.na(stan_data$time)] <- 1
     }
   } else if (family == "normal") {
     stan_data$y <- bugsdata$y
+    stan_data$y[is.na(stan_data$y)] <- 0
     stan_data$se <- bugsdata$se
+    stan_data$se[is.na(stan_data$se)] <- 1  # avoid division by zero
   } else if (family == "poisson") {
     stan_data$r <- bugsdata$r
+    stan_data$r[is.na(stan_data$r)] <- 0
     stan_data$E <- bugsdata$E
+    stan_data$E[is.na(stan_data$E)] <- 1  # avoid division by zero
   }
   
-  # Add priors
-  max.delta <- nma.prior(list(arm.data = NULL, varname.t = NULL, varname.s = NULL, 
-                              treatments = NULL, studies = NULL, n.arms = NULL),
-                        data_contrast = NULL,
-                        outcome = model$outcome, 
-                        differences = NULL, 
-                        scale = model$scale,
-                        N = model$N, 
-                        sd = model$sd, 
-                        time = model$time)
+  # Add priors - use reasonable defaults based on scale
+  # These match what BUGSnet uses for default priors
+  max.delta <- switch(model$scale,
+                     "Odds Ratio" = 5,
+                     "Risk Ratio" = 2,
+                     "Mean Difference" = 10,
+                     "Hazard Ratio" = 3,
+                     "Rate Ratio" = 3,
+                     5)  # default
   
   # Convert prior precision to SD (JAGS uses precision, Stan uses SD)
   if (model$prior.mu == "DEFAULT") {
@@ -129,6 +136,7 @@ convert_bugs_to_stan_data <- function(model) {
   if (!is.null(model$covariate)) {
     stan_data$has_metareg <- 1
     stan_data$x_a <- bugsdata$x_a
+    stan_data$x_a[is.na(stan_data$x_a)] <- 0
     
     # Determine meta-regression type
     if (model$prior.beta == "UNRELATED") {
