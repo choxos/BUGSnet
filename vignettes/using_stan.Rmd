@@ -1,0 +1,338 @@
+---
+title: "Using Stan (cmdstanr) with BUGSnet"
+author: "BUGSnet Development Team"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Using Stan (cmdstanr) with BUGSnet}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE  # Set to TRUE if cmdstanr is installed
+)
+```
+
+## Introduction
+
+BUGSnet now supports running network meta-analyses using Stan via the `cmdstanr` package, in addition to the traditional JAGS backend. Stan uses Hamiltonian Monte Carlo (HMC) which can provide more efficient sampling, especially for complex models.
+
+## Installation
+
+### Installing cmdstanr
+
+The `cmdstanr` package is not on CRAN. Install it from the Stan R universe:
+
+```{r install_cmdstanr}
+install.packages("cmdstanr", 
+                 repos = c("https://stan-dev.r-universe.dev", 
+                          getOption("repos")))
+```
+
+### Installing CmdStan
+
+After installing `cmdstanr`, you need to install CmdStan (the Stan compiler):
+
+```{r install_cmdstan}
+library(cmdstanr)
+install_cmdstan()
+```
+
+Alternatively, CmdStan will be automatically installed the first time you run `nma.run.stan()`.
+
+## Basic Usage
+
+The workflow with Stan is nearly identical to using JAGS. The main difference is using `nma.run.stan()` instead of `nma.run()`.
+
+### Example: Diabetes Data
+
+```{r diabetes_example}
+library(BUGSnet)
+data(diabetes.sim)
+
+# Prepare data
+diabetes.slr <- data.prep(
+  arm.data = diabetes.sim, 
+  varname.t = "Treatment", 
+  varname.s = "Study"
+)
+
+# Create model (same as with JAGS)
+diabetes.model <- nma.model(
+  data = diabetes.slr,
+  outcome = "diabetes", 
+  N = "n",
+  reference = "Placebo",
+  family = "binomial",
+  link = "cloglog",
+  effects = "random",
+  type = "consistency",
+  time = "followup"
+)
+
+# Run with Stan instead of JAGS
+diabetes.stan <- nma.run.stan(
+  model = diabetes.model,
+  iter_warmup = 1000,
+  iter_sampling = 2000,
+  chains = 4
+)
+```
+
+## Key Differences from JAGS
+
+### Parameter Names
+
+| JAGS (nma.run)    | Stan (nma.run.stan)     | Description                |
+|-------------------|-------------------------|----------------------------|
+| `n.adapt`         | `iter_warmup`           | Warmup/adaptation          |
+| `n.burnin`        | (included in warmup)    | Burn-in                    |
+| `n.iter`          | `iter_sampling`         | Post-warmup iterations     |
+| `n.chains`        | `chains`                | Number of chains           |
+
+### Stan-Specific Parameters
+
+Stan provides additional tuning parameters:
+
+- **`adapt_delta`** (default 0.95): Target acceptance rate. Increase to 0.99 if you see divergent transitions.
+- **`max_treedepth`** (default 15): Maximum tree depth for NUTS sampler. Increase if you see warnings.
+- **`parallel_chains`** (default = `chains`): Number of chains to run in parallel.
+
+```{r stan_tuning}
+# Example with tuning for difficult models
+diabetes.stan.tuned <- nma.run.stan(
+  model = diabetes.model,
+  iter_warmup = 2000,
+  iter_sampling = 3000,
+  chains = 4,
+  adapt_delta = 0.99,        # Higher for more stable sampling
+  max_treedepth = 20,        # Higher for complex posteriors
+  parallel_chains = 4        # Run all chains in parallel
+)
+```
+
+## Diagnostics
+
+Stan provides enhanced diagnostics compared to JAGS:
+
+```{r diagnostics}
+# The function automatically checks:
+# - Divergent transitions
+# - Maximum tree depth hits
+# - R-hat convergence (< 1.05)
+# - Effective sample size (> 400)
+
+# Access the underlying Stan fit for detailed diagnostics
+stan_fit <- diabetes.stan$stan_fit
+
+# Stan summary
+stan_fit$summary()
+
+# Detailed diagnostics
+stan_fit$diagnostic_summary()
+
+# Sampler parameters
+stan_fit$sampler_diagnostics()
+```
+
+## Downstream Compatibility
+
+All results from `nma.run.stan()` are fully compatible with downstream BUGSnet functions:
+
+```{r downstream}
+# League tables
+nma.league(diabetes.stan, 
+           central.tdcy = "median", 
+           order = "ascending")
+
+# Rankings
+nma.rank(diabetes.stan, 
+         largerbetter = FALSE)
+
+# Forest plots
+nma.forest(diabetes.stan, 
+           comparator = "Placebo")
+
+# Trace plots
+nma.trace(diabetes.stan)
+
+# Model fit statistics
+nma.fit(diabetes.stan, main = "Model Fit")
+
+# Diagnostic plots
+nma.diag(diabetes.stan, 
+         plot_type = "dev")
+```
+
+## Performance Considerations
+
+### Advantages of Stan
+
+1. **Often faster**: HMC can explore the posterior more efficiently
+2. **Better for complex models**: Handles difficult geometries better
+3. **Superior diagnostics**: Divergent transitions warn about problems
+4. **Parallel chains**: Easy parallel execution
+
+### When to Use Stan
+
+- Complex random effects models
+- Meta-regression with many covariates
+- Large networks (many treatments)
+- When JAGS shows slow mixing
+
+### When to Use JAGS
+
+- Simple models (may be faster without compilation)
+- When reproducibility with existing JAGS results is critical
+- When cmdstanr installation is problematic
+
+## All Supported Model Types
+
+Stan support includes all BUGSnet model types:
+
+**Families and Links:**
+- Binomial: logit, log, cloglog
+- Normal: identity
+- Poisson: log
+
+**Model Types:**
+- Fixed effects / Random effects
+- Consistency / Inconsistency
+- With or without meta-regression
+
+**Meta-regression Priors:**
+- UNRELATED
+- EXCHANGEABLE  
+- EQUAL
+
+```{r all_types}
+# Fixed effects consistency (binomial-logit)
+model.fe <- nma.model(
+  data = my.data,
+  outcome = "events",
+  N = "n",
+  reference = "Control",
+  family = "binomial",
+  link = "logit",
+  effects = "fixed",
+  type = "consistency"
+)
+
+result.fe.stan <- nma.run.stan(model.fe, iter_sampling = 2000)
+
+# Random effects with meta-regression
+model.re.metareg <- nma.model(
+  data = my.data,
+  outcome = "events",
+  N = "n",
+  reference = "Control",
+  family = "binomial",
+  link = "logit",
+  effects = "random",
+  type = "consistency",
+  covariate = "age",
+  prior.beta = "UNRELATED"
+)
+
+result.re.metareg.stan <- nma.run.stan(
+  model.re.metareg, 
+  iter_warmup = 2000,
+  iter_sampling = 3000
+)
+```
+
+## Troubleshooting
+
+### Compilation Errors
+
+If you encounter compilation errors:
+
+```{r troubleshoot_compile, eval=FALSE}
+# Reinstall CmdStan
+cmdstanr::install_cmdstan(overwrite = TRUE)
+
+# Check CmdStan installation
+cmdstanr::cmdstan_version()
+```
+
+### Divergent Transitions
+
+If you see warnings about divergent transitions:
+
+```{r troubleshoot_divergent}
+# Increase adapt_delta
+result <- nma.run.stan(
+  model = my.model,
+  adapt_delta = 0.99,  # or even 0.999
+  iter_warmup = 2000   # more warmup helps too
+)
+```
+
+### Maximum Tree Depth
+
+If iterations hit maximum tree depth:
+
+```{r troubleshoot_treedepth}
+result <- nma.run.stan(
+  model = my.model,
+  max_treedepth = 20  # increase from default 15
+)
+```
+
+### Slow Sampling
+
+For slow sampling:
+
+```{r troubleshoot_slow}
+# Use parallel chains
+result <- nma.run.stan(
+  model = my.model,
+  chains = 4,
+  parallel_chains = 4  # all at once
+)
+
+# Or reduce chains but increase iterations
+result <- nma.run.stan(
+  model = my.model,
+  chains = 2,
+  iter_sampling = 3000
+)
+```
+
+## Comparing JAGS and Stan Results
+
+It's good practice to compare results between backends:
+
+```{r compare}
+# Run with both backends
+result.jags <- nma.run(model, n.iter = 10000)
+result.stan <- nma.run.stan(model, iter_sampling = 5000)
+
+# Compare treatment effects
+fit.jags <- nma.fit(result.jags)
+fit.stan <- nma.fit(result.stan)
+
+# Compare league tables
+league.jags <- nma.league(result.jags)
+league.stan <- nma.league(result.stan)
+
+# Results should be very similar
+# Small differences are normal due to Monte Carlo error
+```
+
+## Additional Resources
+
+- [Stan User's Guide](https://mc-stan.org/docs/stan-users-guide/index.html)
+- [cmdstanr Documentation](https://mc-stan.org/cmdstanr/)
+- [BUGSnet Documentation](https://bugsnetsoftware.github.io)
+
+## Session Info
+
+```{r session}
+sessionInfo()
+```
+

@@ -13,8 +13,8 @@ Authors@R: c(
 Description: BUGSnet (Bayesian inference Using Gibbs Sampling to conduct 
     NETwork meta-analysis) is a feature-rich R package to conduct Bayesian 
     network meta-analyses in compliance with best practice and reporting 
-    guidelines. Bayesian analyses are conducted with JAGS. Outputs are 
-    highly customizable and include network plots, tables of network 
+    guidelines. Bayesian analyses are conducted with JAGS or Stan (via cmdstanr). 
+    Outputs are highly customizable and include network plots, tables of network 
     characteristics, league tables and league heat plots, SUCRA plots, 
     rankograms, forest plots, leverage plots, traceplots, posterior mean 
     deviance comparison plots.
@@ -47,9 +47,12 @@ Imports:
     tidyselect,
     utils
 Suggests: 
+    cmdstanr (>= 0.5.0),
     knitr (>= 1.25),
+    posterior,
     rmarkdown (>= 1.16),
     testthat (>= 2.2.1)
+Additional_repositories: https://stan-dev.r-universe.dev
 Encoding: UTF-8
 LazyData: yes
 VignetteBuilder: knitr
