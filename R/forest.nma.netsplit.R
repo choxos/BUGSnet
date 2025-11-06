@@ -1,3 +1,17 @@
+#' @title Forest Plot Generic
+#' 
+#' @description
+#' Generic function for forest plots
+#' 
+#' @param x An object for which a forest plot method exists
+#' @param ... Additional arguments passed to methods
+#' 
+#' @export
+forest <- function(x, ...) {
+  UseMethod("forest")
+}
+
+
 #' @title Forest Plot for Direct and Indirect Evidence
 #' 
 #' @description

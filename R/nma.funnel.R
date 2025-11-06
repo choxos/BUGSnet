@@ -89,13 +89,16 @@ nma.funnel <- function(nma,
     trt1 <- pairwise_data$treat1[i]
     trt2 <- pairwise_data$treat2[i]
     
+    trt1_idx <- which(nma$trt.key == trt1)
+    trt2_idx <- which(nma$trt.key == trt2)
+    
     # Network estimate
-    if (trt1 == nma$trt.key[1]) {
-      nma_effect <- samples_matrix[[paste0("d.", trt2)]]
-    } else if (trt2 == nma$trt.key[1]) {
-      nma_effect <- -samples_matrix[[paste0("d.", trt1)]]
+    if (trt1_idx == 1) {
+      nma_effect <- samples_matrix[[paste0("d.", trt2_idx, ".")]]
+    } else if (trt2_idx == 1) {
+      nma_effect <- -samples_matrix[[paste0("d.", trt1_idx, ".")]]
     } else {
-      nma_effect <- samples_matrix[[paste0("d.", trt2)]] - samples_matrix[[paste0("d.", trt1)]]
+      nma_effect <- samples_matrix[[paste0("d.", trt2_idx, ".")]] - samples_matrix[[paste0("d.", trt1_idx, ".")]]
     }
     
     pairwise_data$TE.nma[i] <- mean(nma_effect)
@@ -210,12 +213,15 @@ nma.radial <- function(nma,
     trt1 <- pairwise_data$treat1[i]
     trt2 <- pairwise_data$treat2[i]
     
-    if (trt1 == nma$trt.key[1]) {
-      nma_effect <- samples_matrix[[paste0("d.", trt2)]]
-    } else if (trt2 == nma$trt.key[1]) {
-      nma_effect <- -samples_matrix[[paste0("d.", trt1)]]
+    trt1_idx <- which(nma$trt.key == trt1)
+    trt2_idx <- which(nma$trt.key == trt2)
+    
+    if (trt1_idx == 1) {
+      nma_effect <- samples_matrix[[paste0("d.", trt2_idx, ".")]]
+    } else if (trt2_idx == 1) {
+      nma_effect <- -samples_matrix[[paste0("d.", trt1_idx, ".")]]
     } else {
-      nma_effect <- samples_matrix[[paste0("d.", trt2)]] - samples_matrix[[paste0("d.", trt1)]]
+      nma_effect <- samples_matrix[[paste0("d.", trt2_idx, ".")]] - samples_matrix[[paste0("d.", trt1_idx, ".")]]
     }
     
     pairwise_data$TE.nma[i] <- mean(nma_effect)
@@ -255,7 +261,14 @@ extract_pairwise_data <- function(nma, order) {
   # to properly extract all pairwise comparisons from the network
   
   data <- nma$model$data
-  result <- data.frame()
+  result_list <- list()
+  counter <- 1
+  
+  # Get study labels
+  study_labels <- rownames(data$t_a)
+  if (is.null(study_labels)) {
+    study_labels <- paste0("Study_", 1:data$ns_a)
+  }
   
   for (study in 1:data$ns_a) {
     study_trts_idx <- data$t_a[study, 1:data$na_a[study]]
@@ -275,12 +288,18 @@ extract_pairwise_data <- function(nma, order) {
             r2 <- data$r[study, j]
             n2 <- data$n[study, j]
             
-            if (!is.na(r1) && !is.na(r2) && r1 > 0 && r2 > 0) {
-              logOR <- log((r2/(n2-r2))/(r1/(n1-r1)))
-              seLogOR <- sqrt(1/r1 + 1/(n1-r1) + 1/r2 + 1/(n2-r2))
+            # Add small continuity correction to avoid log(0)
+            if (!is.na(r1) && !is.na(r2) && !is.na(n1) && !is.na(n2)) {
+              r1_adj <- r1 + 0.5
+              r2_adj <- r2 + 0.5
+              n1_adj <- n1 + 1
+              n2_adj <- n2 + 1
               
-              result <- rbind(result, data.frame(
-                studlab = rownames(data$t_a)[study],
+              logOR <- log((r2_adj/(n2_adj-r2_adj))/(r1_adj/(n1_adj-r1_adj)))
+              seLogOR <- sqrt(1/r1_adj + 1/(n1_adj-r1_adj) + 1/r2_adj + 1/(n2_adj-r2_adj))
+              
+              result_list[[counter]] <- data.frame(
+                studlab = study_labels[study],
                 treat1 = trt1,
                 treat2 = trt2,
                 comparison = paste(trt2, "vs", trt1),
@@ -288,12 +307,22 @@ extract_pairwise_data <- function(nma, order) {
                 seTE = seLogOR,
                 TE.nma = NA,
                 stringsAsFactors = FALSE
-              ))
+              )
+              counter <- counter + 1
             }
           }
         }
       }
     }
+  }
+  
+  if (length(result_list) > 0) {
+    result <- do.call(rbind, result_list)
+  } else {
+    result <- data.frame(studlab = character(), treat1 = character(), 
+                        treat2 = character(), comparison = character(),
+                        TE = numeric(), seTE = numeric(), TE.nma = numeric(),
+                        stringsAsFactors = FALSE)
   }
   
   return(result)

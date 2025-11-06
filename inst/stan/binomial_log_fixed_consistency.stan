@@ -83,7 +83,9 @@ model {
       if (has_metareg == 1) {
         log_p += (beta[t_a[i,k]] - beta[t_a[i,1]]) * x_a[i,k];
       }
-      r[i,k] ~ binomial(n[i,k], exp(log_p));
+      // For log link: p = exp(log_p), constrained to [0,1]
+      real p = fmin(exp(log_p), 0.9999);
+      r[i,k] ~ binomial(n[i,k], p);
     }
   }
 }

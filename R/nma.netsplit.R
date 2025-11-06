@@ -99,10 +99,13 @@ nma.netsplit <- function(nma,
       # Calculate relative effect (trt2 vs trt1)
       if (i == 1) {
         # Comparison with reference - direct from d parameter
-        rel_effect <- samples_matrix[[paste0("d.", trt2)]]
+        trt2_idx <- which(trts == trt2)
+        rel_effect <- samples_matrix[[paste0("d.", trt2_idx, ".")]]
       } else {
         # Indirect comparison
-        rel_effect <- samples_matrix[[paste0("d.", trt2)]] - samples_matrix[[paste0("d.", trt1)]]
+        trt1_idx <- which(trts == trt1)
+        trt2_idx <- which(trts == trt2)
+        rel_effect <- samples_matrix[[paste0("d.", trt2_idx, ".")]] - samples_matrix[[paste0("d.", trt1_idx, ".")]]
       }
       
       # Network estimate
@@ -292,11 +295,11 @@ calculate_direct_estimate <- function(nma, trt1, trt2) {
   
   # Get relative effect from samples
   if (trt1_idx == 1) {
-    rel_effect <- samples_matrix[[paste0("d.", trt2)]]
+    rel_effect <- samples_matrix[[paste0("d.", trt2_idx, ".")]]
   } else if (trt2_idx == 1) {
-    rel_effect <- -samples_matrix[[paste0("d.", trt1)]]
+    rel_effect <- -samples_matrix[[paste0("d.", trt1_idx, ".")]]
   } else {
-    rel_effect <- samples_matrix[[paste0("d.", trt2)]] - samples_matrix[[paste0("d.", trt1)]]
+    rel_effect <- samples_matrix[[paste0("d.", trt2_idx, ".")]] - samples_matrix[[paste0("d.", trt1_idx, ".")]]
   }
   
   list(mean = mean(rel_effect), var = var(rel_effect))
