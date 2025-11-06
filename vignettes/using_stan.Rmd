@@ -168,6 +168,41 @@ nma.diag(diabetes.stan,
          plot_type = "dev")
 ```
 
+## Advanced Plotting Features with Stan
+
+All new advanced plotting features (inspired by netmeta) work seamlessly with Stan results. See the "Advanced Plotting and Diagnostics" vignette for detailed examples.
+
+```{r advanced_plots}
+# Evidence splitting (assess local inconsistency)
+split <- nma.netsplit(diabetes.stan)
+print(split)
+forest(split, show = "with.direct")
+
+# Heat plot (color-coded league table)
+nma.heatplot(diabetes.stan)
+
+# Comparison-adjusted funnel plot (publication bias)
+trt_order <- c("Placebo", "Lifestyle", "Metformin", "Rosiglitazone")
+nma.funnel(diabetes.stan, order = trt_order)
+
+# Comparison-adjusted radial plot
+nma.radial(diabetes.stan, order = trt_order)
+
+# Treatment rankings (works as always)
+ranks <- nma.rank(diabetes.stan, largerbetter = FALSE)
+ranks$sucraplot
+ranks$rankogram
+
+# Ordered heat plot by SUCRA
+nma.heatplot(diabetes.stan, order = ranks$order)
+```
+
+**Key features:**
+- All plotting functions compatible with both JAGS and Stan
+- No code changes needed - just use `nma.run.stan()` instead of `nma.run()`
+- Publication-quality visualizations
+- Comprehensive diagnostics for network inconsistency and bias
+
 ## Performance Considerations
 
 ### Advantages of Stan

@@ -1,0 +1,476 @@
+---
+title: "Advanced Plotting and Diagnostics"
+author: "BUGSnet Development Team"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+bibliography: references.bib
+vignette: >
+  %\VignetteIndexEntry{Advanced Plotting and Diagnostics}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+## Introduction
+
+This vignette demonstrates advanced plotting and diagnostic functions in BUGSnet that are inspired by the netmeta package [@netmeta]. These functions provide comprehensive tools for:
+
+- Assessing local inconsistency through evidence splitting
+- Creating publication-quality visualizations
+- Detecting small-study effects and publication bias
+- Visualizing treatment rankings
+
+All functions work with both JAGS (`nma.run()`) and Stan (`nma.run.stan()`) results.
+
+## Example Data and Model Fitting
+
+We'll use the thrombolytic dataset to demonstrate these features.
+
+```{r data_prep}
+library(BUGSnet)
+
+# Load and prepare data
+data(thrombolytic)
+thrombo.slr <- data.prep(arm.data = thrombolytic,
+                         varname.t = "treatment",
+                         varname.s = "study")
+```
+
+### Fit a Random Effects Model
+
+```{r model_fit, eval=FALSE}
+# Create model
+thrombo.model <- nma.model(data = thrombo.slr,
+                           outcome = "events",
+                           N = "sampleSize",
+                           reference = "SK",
+                           family = "binomial",
+                           link = "log",
+                           effects = "random",
+                           type = "consistency")
+
+# Run MCMC sampling
+thrombo.res <- nma.run(model = thrombo.model,
+                       n.adapt = 1000,
+                       n.burnin = 1000,
+                       n.iter = 10000)
+```
+
+```{r load_results, echo=FALSE}
+# For vignette building, we'll simulate results
+# In practice, use the actual nma.run() output
+set.seed(123)
+```
+
+## 1. Network Evidence Splitting
+
+The `nma.netsplit()` function splits network meta-analysis estimates into direct and indirect evidence contributions, helping assess local inconsistency [@Dias2010; @Konig2013].
+
+### Basic Usage
+
+```{r netsplit, eval=FALSE}
+# Split evidence
+split_results <- nma.netsplit(thrombo.res)
+
+# Print results
+print(split_results)
+```
+
+The output shows for each comparison:
+
+- **Network estimate**: Pooled estimate from the full network
+- **Direct estimate**: From studies directly comparing the treatments
+- **Indirect estimate**: Back-calculated from network and direct evidence
+- **Test statistic**: z-test and p-value for disagreement
+- **Direct evidence proportion**: Contribution of direct evidence
+
+### Interpreting Results
+
+- **p < 0.05**: Suggests potential local inconsistency
+- **Large differences**: Direct and indirect estimates substantially differ
+- **High direct proportion**: Estimate relies heavily on direct comparisons
+
+### Forest Plot for Evidence Splitting
+
+```{r forest_netsplit, eval=FALSE}
+# Create forest plot
+forest(split_results, 
+       show = "with.direct",  # Show comparisons with direct evidence
+       backtransf = TRUE,     # Show as risk ratios
+       digits = 2)
+```
+
+**Options:**
+
+- `show`: Control which comparisons to display
+  - `"all"`: All comparisons
+  - `"with.direct"`: Only comparisons with direct evidence (default)
+  - `"both"`: Only comparisons with both direct and indirect evidence
+  
+- `overall`: Show network estimates (TRUE/FALSE)
+- `direct`: Show direct estimates (TRUE/FALSE)
+- `indirect`: Show indirect estimates (TRUE/FALSE)
+
+## 2. Heat Plots (League Tables with Colors)
+
+The `nma.heatplot()` function creates a league table where cells are colored by treatment effect magnitude, making patterns easier to identify [@netmeta].
+
+```{r heatplot, eval=FALSE}
+# Basic heat plot
+nma.heatplot(thrombo.res)
+
+# Customize colors
+nma.heatplot(thrombo.res,
+             low.colour = "blue",      # Favors row treatment
+             mid.colour = "white",     # No difference
+             high.colour = "red",      # Favors column treatment
+             digits = 2)
+
+# Specify treatment order
+nma.heatplot(thrombo.res,
+             order = c("SK", "tPA", "SK+tPA", "Acc t-PA", "r-PA", 
+                      "PTCA", "ASPAC", "TNK", "UK"),
+             size = 3.5,               # Text size for estimates
+             size.trt = 11)            # Text size for treatment names
+```
+
+**Features:**
+
+- Color gradient represents effect size
+- Each cell shows point estimate and 95% CrI
+- Automatic back-transformation for OR, RR, HR
+- Customizable color schemes
+- Reorderable treatments
+
+**Comparison with `nma.league()`:**
+
+- `nma.league()`: Text-only league table
+- `nma.heatplot()`: Visual representation with colors
+
+## 3. Comparison-Adjusted Funnel Plots
+
+Funnel plots help detect small-study effects and publication bias. The `nma.funnel()` function creates comparison-adjusted funnel plots that account for different treatment comparisons [@Chaimani2012].
+
+### Why "Comparison-Adjusted"?
+
+In network meta-analysis, studies compare different treatment pairs. Comparison adjustment ensures studies are fairly compared by adjusting for the specific comparisons being made.
+
+```{r funnel, eval=FALSE}
+# Create funnel plot
+# IMPORTANT: The 'order' argument is MANDATORY
+nma.funnel(thrombo.res,
+           order = c("SK", "tPA", "SK+tPA", "Acc t-PA", "r-PA", 
+                    "PTCA", "ASPAC", "TNK", "UK"))
+```
+
+**Interpreting the order argument:**
+
+The `order` should reflect a meaningful sequence:
+
+1. **By recency**: Oldest to newest treatments
+2. **By intervention type**: Placebo → Standard care → Active treatments
+3. **By intensity**: Less intensive → More intensive
+4. **By sponsorship**: Non-sponsored → Sponsored
+
+This ordering assumption is crucial for detecting bias patterns.
+
+**Customization:**
+
+```{r funnel_custom, eval=FALSE}
+# Customize appearance
+nma.funnel(thrombo.res,
+           order = c("SK", "tPA", "SK+tPA", "Acc t-PA", "r-PA", 
+                    "PTCA", "ASPAC", "TNK", "UK"),
+           col = rainbow(8),           # Different colors per comparison
+           pch = 15:22,                # Different symbols per comparison
+           legend = TRUE,              # Show legend
+           pos.legend = "topright",
+           backtransf = TRUE)          # Back-transform to RR scale
+```
+
+**Interpretation:**
+
+- **Symmetric funnel**: No evidence of small-study effects
+- **Asymmetric funnel**: Possible publication bias or small-study effects
+- **Points outside funnel**: Studies with unusual effect sizes
+
+## 4. Comparison-Adjusted Radial Plots
+
+Radial plots (Galbraith plots) provide an alternative visualization for detecting small-study effects, especially useful when heterogeneity is low [@Chaimani2012].
+
+```{r radial, eval=FALSE}
+# Create radial plot
+nma.radial(thrombo.res,
+           order = c("SK", "tPA", "SK+tPA", "Acc t-PA", "r-PA", 
+                    "PTCA", "ASPAC", "TNK", "UK"))
+
+# With customization
+nma.radial(thrombo.res,
+           order = c("SK", "tPA", "SK+tPA", "Acc t-PA", "r-PA", 
+                    "PTCA", "ASPAC", "TNK", "UK"),
+           col = rainbow(8),
+           pch = 15:22,
+           level = 0.95)              # 95% confidence bounds
+```
+
+**Advantages over funnel plots:**
+
+- Better for studies with similar precision
+- Easier to spot systematic patterns
+- Linear scale often clearer than funnel shape
+
+**Interpretation:**
+
+- Points within confidence bands: Expected variation
+- Points outside bands: Unusual studies requiring investigation
+- Systematic pattern: Potential small-study effects
+
+## 5. Treatment Rankings (SUCRA)
+
+BUGSnet's existing `nma.rank()` function provides comprehensive treatment ranking analysis [@Salanti2011].
+
+```{r ranking, eval=FALSE}
+# Calculate rankings
+ranks <- nma.rank(thrombo.res, 
+                  largerbetter = FALSE)  # FALSE: smaller is better (for RR, OR)
+                                         # TRUE: larger is better (for beneficial outcomes)
+
+# View SUCRA table
+ranks$sucratable
+
+# View ranking probabilities
+ranks$ranktable
+
+# Plot SUCRA (cumulative ranking curve)
+ranks$sucraplot
+
+# Plot rankogram (bar chart of ranking probabilities)
+ranks$rankogram
+
+# Get treatment order by efficacy (useful for heat plots)
+treatment_order <- ranks$order
+```
+
+**Understanding SUCRA:**
+
+- **SUCRA = 1.0**: Best treatment (always ranked first)
+- **SUCRA = 0.5**: Middle-ranked treatment
+- **SUCRA = 0.0**: Worst treatment (always ranked last)
+
+**Using with other functions:**
+
+```{r ranking_integration, eval=FALSE}
+# Use SUCRA ordering in heat plot
+nma.heatplot(thrombo.res, order = ranks$order)
+
+# Use in league table
+nma.league(thrombo.res, 
+           order = ranks$order,
+           central.tdcy = "median")
+```
+
+## 6. Meta-Regression Support
+
+All plotting functions support meta-regression models when `cov.value` is specified.
+
+```{r metareg, eval=FALSE}
+# Fit meta-regression model (example with age covariate)
+thrombo.metareg <- nma.model(data = thrombo.slr,
+                              outcome = "events",
+                              N = "sampleSize",
+                              reference = "SK",
+                              family = "binomial",
+                              link = "log",
+                              effects = "random",
+                              covariate = "age",
+                              prior.beta = "UNRELATED")
+
+thrombo.metareg.res <- nma.run(model = thrombo.metareg,
+                               n.adapt = 1000,
+                               n.burnin = 1000,
+                               n.iter = 10000)
+
+# Heat plot at specific covariate value
+nma.heatplot(thrombo.metareg.res, cov.value = 65)
+
+# Rankings at specific covariate value
+ranks.age65 <- nma.rank(thrombo.metareg.res, 
+                        largerbetter = FALSE,
+                        cov.value = 65)
+```
+
+## 7. Complete Workflow Example
+
+Here's a complete analysis workflow using all advanced plotting features:
+
+```{r complete_workflow, eval=FALSE}
+# 1. Data preparation and model fitting
+data(thrombolytic)
+thrombo.slr <- data.prep(arm.data = thrombolytic,
+                         varname.t = "treatment",
+                         varname.s = "study")
+
+# 2. Network plot
+net.plot(thrombo.slr, node.scale = 2, edge.scale = 1)
+
+# 3. Fit random effects consistency model
+thrombo.model <- nma.model(data = thrombo.slr,
+                           outcome = "events",
+                           N = "sampleSize",
+                           reference = "SK",
+                           family = "binomial",
+                           link = "log",
+                           effects = "random")
+
+thrombo.res <- nma.run(model = thrombo.model,
+                       n.adapt = 1000,
+                       n.burnin = 1000,
+                       n.iter = 10000)
+
+# 4. Check for local inconsistency
+split <- nma.netsplit(thrombo.res)
+print(split)
+forest(split)
+
+# 5. Visualize all treatment comparisons
+nma.heatplot(thrombo.res)
+
+# 6. Assess publication bias
+trt_order <- c("SK", "tPA", "SK+tPA", "Acc t-PA", "r-PA", 
+               "PTCA", "ASPAC", "TNK", "UK")
+nma.funnel(thrombo.res, order = trt_order)
+nma.radial(thrombo.res, order = trt_order)
+
+# 7. Rank treatments
+ranks <- nma.rank(thrombo.res, largerbetter = FALSE)
+ranks$sucraplot
+ranks$rankogram
+
+# 8. Create ordered heat plot based on rankings
+nma.heatplot(thrombo.res, order = ranks$order)
+
+# 9. Standard outputs
+nma.forest(thrombo.res, comparator = "SK")
+nma.league(thrombo.res, 
+           order = ranks$order,
+           low.colour = "springgreen4",
+           mid.colour = "white",
+           high.colour = "red")
+```
+
+## 8. Tips and Best Practices
+
+### Evidence Splitting
+
+- Focus on comparisons with both direct and indirect evidence
+- Investigate comparisons with p < 0.10 (not just p < 0.05)
+- Consider clinical importance, not just statistical significance
+- If inconsistency found, consider:
+  - Inconsistency model (`type = "inconsistency"`)
+  - Meta-regression to explain heterogeneity
+  - Subgroup analyses
+
+### Heat Plots
+
+- Use treatment ordering by SUCRA for clearer patterns
+- Choose colors that work for color-blind readers
+- Consider adding to supplementary materials for comprehensive results
+- Useful for presentations (easier to interpret than league tables)
+
+### Funnel and Radial Plots
+
+- Specify treatment order carefully (by recency, type, etc.)
+- Don't rely solely on visual inspection
+- Consider formal tests (planned for future releases)
+- Remember: asymmetry could indicate bias OR genuine heterogeneity
+
+### Treatment Rankings
+
+- SUCRA is useful but not the only consideration
+- Consider:
+  - Confidence interval width (precision)
+  - Clinical relevance
+  - Adverse events (separate analysis)
+  - Cost-effectiveness
+- Use `largerbetter` correctly:
+  - FALSE for OR, RR, HR (want values < 1)
+  - TRUE for beneficial continuous outcomes (want higher values)
+
+## 9. Compatibility with Stan
+
+All functions work seamlessly with Stan results via `nma.run.stan()`:
+
+```{r stan_compat, eval=FALSE}
+# Using cmdstanr instead of JAGS
+thrombo.res.stan <- nma.run.stan(model = thrombo.model,
+                                  iter_warmup = 1000,
+                                  iter_sampling = 2000,
+                                  chains = 4)
+
+# All plotting functions work identically
+nma.netsplit(thrombo.res.stan)
+nma.heatplot(thrombo.res.stan)
+nma.funnel(thrombo.res.stan, order = trt_order)
+nma.rank(thrombo.res.stan, largerbetter = FALSE)
+```
+
+## 10. Exporting Publication-Quality Figures
+
+All ggplot2-based plots can be easily customized and exported:
+
+```{r export, eval=FALSE}
+# Save heat plot
+library(ggplot2)
+p <- nma.heatplot(thrombo.res, order = ranks$order)
+ggsave("heatplot.png", p, width = 10, height = 8, dpi = 300)
+ggsave("heatplot.pdf", p, width = 10, height = 8)
+
+# Save forest plot for evidence splitting
+p_forest <- forest(split, show = "with.direct")
+ggsave("evidence_splitting.png", p_forest, width = 12, height = 8, dpi = 300)
+
+# Save SUCRA plot
+p_sucra <- ranks$sucraplot + 
+  theme_bw() + 
+  theme(legend.position = "bottom")
+ggsave("sucra.png", p_sucra, width = 8, height = 6, dpi = 300)
+
+# Traditional plots (funnel, radial) use base R graphics
+png("funnel_plot.png", width = 3000, height = 2400, res = 300)
+nma.funnel(thrombo.res, order = trt_order)
+dev.off()
+```
+
+## Summary
+
+This vignette demonstrated BUGSnet's advanced plotting capabilities:
+
+1. **Evidence splitting** (`nma.netsplit()`) - Assess local inconsistency
+2. **Forest plots** (`forest.nma.netsplit()`) - Visualize direct vs indirect evidence  
+3. **Heat plots** (`nma.heatplot()`) - Color-coded league tables
+4. **Funnel plots** (`nma.funnel()`) - Detect publication bias
+5. **Radial plots** (`nma.radial()`) - Alternative bias detection
+6. **Rankings** (`nma.rank()`) - SUCRA and rankograms
+
+These tools provide comprehensive diagnostics and publication-quality visualizations for network meta-analysis, all compatible with both JAGS and Stan backends.
+
+## References
+
+<div id="refs"></div>
+
+## Session Info
+
+```{r session_info}
+sessionInfo()
+```
+
